@@ -1,0 +1,2 @@
+https://github.com/febryardiansyah/manga-api
+https://github.com/Romi666/komikku-api

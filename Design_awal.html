@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MangaVerse | Your Ultimate Manga Reading Experience</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script type="module">
+        import mangaState from './state.js';
+        import { UIComponents } from './components.js';
+        import mangaReader from './reader.js';
+        import { fetchPopularManga, searchManga, fetchMangaDetails } from './mangadex-api.js';
+
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Load popular manga
+            await loadPopularManga();
+            
+            // Initialize search
+            initSearch();
+            
+            // Initialize event listeners
+            initEventListeners();
+        });
+
+        // Load popular manga
+        async function loadPopularManga() {
+            try {
+                const popularMangaContainer = document.querySelector('.grid-cols-2.sm\\:grid-cols-3.md\\:grid-cols-4.lg\\:grid-cols-5.xl\\:grid-cols-6');
+                popularMangaContainer.innerHTML = UIComponents.createSpinner('lg');
+                
+                const popularManga = await fetchPopularManga(6);
+                if (!popularManga || popularManga.length === 0) {
+                    throw new Error('No popular manga found');
+                }
+                
+                popularMangaContainer.innerHTML = popularManga.map(manga => 
+                    UIComponents.createMangaCard(manga)
+                ).join('');
+                
+                // Add click event listeners to manga cards
+                document.querySelectorAll('.manga-card a[data-manga-id]').forEach(card => {
+                    card.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        const mangaId = card.dataset.mangaId;
+                        const mangaDetail = await fetchMangaDetails(mangaId);
+                        if (mangaDetail) {
+                            showMangaDetail(mangaDetail);
+                        }
+                    });
+                });
+                
+                // Add bookmark event listeners
+                document.querySelectorAll('.bookmark-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const mangaId = btn.dataset.mangaId;
+                        const isBookmarked = mangaState.toggleBookmark(mangaId);
+                        btn.querySelector('i').className = isBookmarked ? 'fas fa-bookmark' : 'far fa-bookmark';
+                        UIComponents.createToast(
+                            isBookmarked ? 'Added to bookmarks' : 'Removed from bookmarks',
+                            isBookmarked ? 'success' : 'info'
+                        );
+                    });
+                });
+                
+            } catch (error) {
+                console.error('Error loading popular manga:', error);
+                const popularMangaContainer = document.querySelector('.grid-cols-2.sm\\:grid-cols-3.md\\:grid-cols-4.lg\\:grid-cols-5.xl\\:grid-cols-6');
+                popularMangaContainer.innerHTML = UIComponents.createErrorMessage('Failed to load popular manga. Please try again later.');
+            }
+        }
+
+        // Initialize search
+        function initSearch() {
+            const searchInput = document.querySelector('input[placeholder="Search manga..."]');
+            let searchTimeout;
+
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(async () => {
+                    const query = e.target.value.trim();
+                    if (query.length >= 2) {
+                        try {
+                            const results = await searchManga(query);
+                            if (results && results.length > 0) {
+                                showSearchResults(results);
+                            } else {
+                                UIComponents.createToast('No results found', 'info');
+                            }
+                        } catch (error) {
+                            console.error('Error searching manga:', error);
+                            UIComponents.createToast('Failed to search manga', 'error');
+                        }
+                    }
+                }, 500);
+            });
+        }
+
+        // Show search results
+        function showSearchResults(results) {
+            const searchResultsContainer = document.getElementById('searchResults');
+            if (!searchResultsContainer) return;
+
+            searchResultsContainer.innerHTML = results.map(manga => `
+                <div class="flex items-center space-x-4 p-4 hover:bg-gray-100 dark:hover:bg-dark-700 rounded-lg cursor-pointer" data-manga-id="${manga.id}">
+                    <img src="${manga.coverUrl}" alt="${manga.title}" class="w-16 h-24 object-cover rounded">
+                    <div>
+                        <h4 class="font-medium">${manga.title}</h4>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">${manga.tags.slice(0, 2).join(', ')}</p>
+                    </div>
+                </div>
+            `).join('');
+
+            // Add click event listeners
+            searchResultsContainer.querySelectorAll('[data-manga-id]').forEach(item => {
+                item.addEventListener('click', async () => {
+                    const mangaId = item.dataset.mangaId;
+                    const mangaDetail = await fetchMangaDetails(mangaId);
+                    if (mangaDetail) {
+                        showMangaDetail(mangaDetail);
+                    }
+                });
+            });
+        }
+
+        // Show manga detail
+        function showMangaDetail(manga) {
+            const modal = document.getElementById('mangaDetailModal');
+            const modalContent = modal.querySelector('.md\\:w-2\\/3');
+            
+            modalContent.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h3 class="text-2xl font-bold mb-2">${manga.title}</h3>
+                        <p class="text-gray-600 dark:text-gray-300 mb-4">By ${manga.author}</p>
+                    </div>
+                    <button id="closeDetailModal" class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="flex flex-wrap gap-2 mb-4">
+                    ${manga.tags.map(tag => `
+                        <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-3 py-1 rounded-full text-sm">${tag}</span>
+                    `).join('')}
+                </div>
+                <div class="mb-4">
+                    <h4 class="font-bold mb-2">Synopsis</h4>
+                    <p class="text-gray-700 dark:text-gray-300 text-sm">${manga.description}</p>
+                </div>
+                <div class="mb-6">
+                    <h4 class="font-bold mb-2">Details</h4>
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                            <span class="text-gray-600 dark:text-gray-400">Status:</span>
+                            <span class="font-medium">${manga.status}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-600 dark:text-gray-400">Chapters:</span>
+                            <span class="font-medium">${manga.chapters || 'N/A'}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-600 dark:text-gray-400">Published:</span>
+                            <span class="font-medium">${manga.year || 'N/A'}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-600 dark:text-gray-400">Author:</span>
+                            <span class="font-medium">${manga.author}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <button class="bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex-1 text-center" data-manga-id="${manga.id}">
+                        <i class="fas fa-book-open mr-2"></i> Read Now
+                    </button>
+                    <button class="bg-gray-200 dark:bg-dark-600 hover:bg-gray-300 dark:hover:bg-dark-500 text-gray-800 dark:text-gray-200 px-6 py-3 rounded-lg font-medium transition-colors flex-1 text-center bookmark-btn" data-manga-id="${manga.id}">
+                        <i class="${mangaState.isBookmarked(manga.id) ? 'fas' : 'far'} fa-bookmark mr-2"></i> Bookmark
+                    </button>
+                </div>
+            `;
+
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+
+            // Add event listeners
+            document.getElementById('closeDetailModal').addEventListener('click', () => {
+                modal.classList.add('hidden');
+                document.body.style.overflow = 'auto';
+            });
+
+            // Add bookmark event listener
+            modal.querySelector('.bookmark-btn').addEventListener('click', () => {
+                const isBookmarked = mangaState.toggleBookmark(manga.id);
+                const icon = modal.querySelector('.bookmark-btn i');
+                icon.className = `${isBookmarked ? 'fas' : 'far'} fa-bookmark mr-2`;
+                UIComponents.createToast(
+                    isBookmarked ? 'Added to bookmarks' : 'Removed from bookmarks',
+                    isBookmarked ? 'success' : 'info'
+                );
+            });
+
+            // Add read now event listener
+            modal.querySelector('button[data-manga-id]').addEventListener('click', () => {
+                modal.classList.add('hidden');
+                showReader(manga);
+            });
+        }
+
+        // Show reader
+        function showReader(manga) {
+            const readerModal = document.getElementById('readerModal');
+            const readerHeader = document.getElementById('readerHeader');
+            const readerContent = document.getElementById('readerContent');
+            
+            readerHeader.querySelector('h3').textContent = `${manga.title} - Chapter 1`;
+            readerContent.innerHTML = UIComponents.createSpinner('lg');
+            
+            readerModal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+
+            // Initialize reader
+            mangaReader.init(manga.id, manga.chapters[0].id);
+
+            // Add event listeners
+            document.addEventListener('keydown', mangaReader.handleKeyPress.bind(mangaReader));
+            readerContent.addEventListener('touchstart', mangaReader.handleTouchStart.bind(mangaReader));
+            readerContent.addEventListener('touchend', mangaReader.handleTouchEnd.bind(mangaReader));
+        }
+
+        // Initialize event listeners
+        function initEventListeners() {
+            // Dark mode toggle
+            const darkModeToggle = document.getElementById('darkModeToggle');
+            const moonIcon = darkModeToggle.querySelector('.fa-moon');
+            const sunIcon = darkModeToggle.querySelector('.fa-sun');
+            
+            darkModeToggle.addEventListener('click', () => {
+                document.documentElement.classList.toggle('dark');
+                const isDark = document.documentElement.classList.contains('dark');
+                
+                if (isDark) {
+                    localStorage.setItem('darkMode', 'enabled');
+                    sunIcon.classList.remove('hidden');
+                    moonIcon.classList.add('hidden');
+                } else {
+                    localStorage.setItem('darkMode', 'disabled');
+                    moonIcon.classList.remove('hidden');
+                    sunIcon.classList.add('hidden');
+                }
+                
+                mangaState.updateSettings({ theme: isDark ? 'dark' : 'light' });
+            });
+            
+            // Mobile menu toggle
+            const mobileMenuButton = document.getElementById('mobileMenuButton');
+            const mobileMenu = document.getElementById('mobileMenu');
+            
+            mobileMenuButton.addEventListener('click', () => {
+                mobileMenu.classList.toggle('hidden');
+            });
+
+            // Close modals when clicking outside
+            window.addEventListener('click', (e) => {
+                const mangaDetailModal = document.getElementById('mangaDetailModal');
+                const readerModal = document.getElementById('readerModal');
+                
+                if (e.target === mangaDetailModal) {
+                    mangaDetailModal.classList.add('hidden');
+                    document.body.style.overflow = 'auto';
+                }
+                
+                if (e.target === readerModal) {
+                    mangaReader.closeReader();
+                }
+            });
+        }
+    </script>
+    <script src="mangadex-api.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            200: '#bae6fd',
+                            300: '#7dd3fc',
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                            900: '#0c4a6e',
+                        },
+                        secondary: {
+                            50: '#f8fafc',
+                            100: '#f1f5f9',
+                            200: '#e2e8f0',
+                            300: '#cbd5e1',
+                            400: '#94a3b8',
+                            500: '#64748b',
+                            600: '#475569',
+                            700: '#334155',
+                            800: '#1e293b',
+                            900: '#0f172a',
+                        },
+                        dark: {
+                            900: '#0f172a',
+                            800: '#1e293b',
+                            700: '#334155',
+                            600: '#475569',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom CSS for elements not easily done with Tailwind */
+        .manga-card {
+            transition: all 0.3s ease;
+        }
+        .manga-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+        .chapter-list-item:hover {
+            background-color: rgba(14, 165, 233, 0.1);
+        }
+        .reader-container {
+            scroll-snap-type: y mandatory;
+        }
+        .reader-page {
+            scroll-snap-align: start;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        /* Dark mode scrollbar */
+        .dark ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #475569;
+        }
+        .dark ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-dark-900 text-gray-900 dark:text-gray-100 transition-colors duration-300">
+    <!-- Dark mode toggle -->
+    <button id="darkModeToggle" class="fixed bottom-6 right-6 z-50 p-3 rounded-full bg-primary-600 text-white shadow-lg hover:bg-primary-700 transition-colors">
+        <i class="fas fa-moon hidden"></i>
+        <i class="fas fa-sun hidden"></i>
+    </button>
+
+    <!-- Header/Navigation -->
+    <header class="sticky top-0 z-40 bg-white dark:bg-dark-800 shadow-sm">
+        <div class="container mx-auto px-4 py-3">
+            <div class="flex items-center justify-between">
+                <!-- Logo -->
+                <div class="flex items-center space-x-2">
+                    <a href="#" class="text-2xl font-bold text-primary-600 dark:text-primary-400 flex items-center">
+                        <i class="fas fa-book-open mr-2"></i>
+                        <span>MangaVerse</span>
+                    </a>
+                </div>
+                
+                <!-- Desktop Navigation -->
+                <nav class="hidden md:flex items-center space-x-8">
+                    <a href="#" class="font-medium hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Home</a>
+                    <a href="#" class="font-medium hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Popular</a>
+                    <a href="#" class="font-medium hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Latest</a>
+                    <a href="#" class="font-medium hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Genres</a>
+                </nav>
+                
+                <!-- Search and User Actions -->
+                <div class="flex items-center space-x-4">
+                    <div class="relative hidden md:block">
+                        <input type="text" placeholder="Search manga..." class="pl-10 pr-4 py-2 rounded-full border border-gray-300 dark:border-gray-600 bg-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent w-64">
+                        <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                    </div>
+                    <button class="md:hidden text-gray-700 dark:text-gray-300">
+                        <i class="fas fa-search text-xl"></i>
+                    </button>
+                    <a href="#" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-dark-700 transition-colors">
+                        <i class="fas fa-bookmark text-xl"></i>
+                    </a>
+                    <a href="#" class="h-9 w-9 rounded-full bg-primary-600 flex items-center justify-center text-white">
+                        <i class="fas fa-user"></i>
+                    </a>
+                    <button id="mobileMenuButton" class="md:hidden text-gray-700 dark:text-gray-300">
+                        <i class="fas fa-bars text-xl"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Mobile Menu -->
+        <div id="mobileMenu" class="hidden md:hidden bg-white dark:bg-dark-800 border-t border-gray-200 dark:border-gray-700">
+            <div class="container mx-auto px-4 py-3">
+                <div class="flex flex-col space-y-4">
+                    <div class="relative">
+                        <input type="text" placeholder="Search manga..." class="pl-10 pr-4 py-2 rounded-full border border-gray-300 dark:border-gray-600 bg-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent w-full">
+                        <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                    </div>
+                    <a href="#" class="font-medium py-2 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Home</a>
+                    <a href="#" class="font-medium py-2 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Popular</a>
+                    <a href="#" class="font-medium py-2 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Latest</a>
+                    <a href="#" class="font-medium py-2 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Genres</a>
+                    <a href="#" class="font-medium py-2 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">History</a>
+                    <a href="#" class="font-medium py-2 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Bookmarks</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="min-h-screen pb-12">
+        <!-- Hero Section -->
+        <section class="relative bg-gradient-to-r from-primary-600 to-primary-800 text-white">
+            <div class="container mx-auto px-4 py-16 md:py-24">
+                <div class="flex flex-col md:flex-row items-center">
+                    <div class="md:w-1/2 mb-8 md:mb-0 md:pr-8">
+                        <h1 class="text-4xl md:text-5xl font-bold mb-4">Discover Your Next Favorite Manga</h1>
+                        <p class="text-xl mb-6">Read thousands of manga, manhwa, and manhua for free. Unlimited access, no ads.</p>
+                        <div class="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
+                            <a href="#" class="bg-white text-primary-600 hover:bg-gray-100 px-6 py-3 rounded-lg text-center font-semibold transition-colors">
+                                <i class="fas fa-book-open mr-2"></i> Start Reading
+                            </a>
+                            <a href="#ai-search" class="bg-primary-700 hover:bg-primary-800 px-6 py-3 rounded-lg text-center font-semibold transition-colors">
+                                <i class="fas fa-image mr-2"></i> Find by Image
+                            </a>
+                        </div>
+                    </div>
+                    <div class="md:w-1/2">
+                        <div class="relative">
+                            <div class="absolute -top-4 -left-4 h-full w-full border-4 border-primary-500 rounded-lg z-0"></div>
+                            <div class="relative z-10">
+                                <img src="https://via.placeholder.com/600x400/1e293b/ffffff?text=Featured+Manga" alt="Featured Manga" class="rounded-lg shadow-xl w-full h-auto">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Quick Access Bar -->
+        <section class="bg-white dark:bg-dark-800 shadow-sm">
+            <div class="container mx-auto px-4">
+                <div class="flex overflow-x-auto py-3 space-x-6 hide-scrollbar">
+                    <a href="#" class="flex flex-col items-center px-4 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-dark-700 transition-colors shrink-0">
+                        <i class="fas fa-fire text-xl mb-1 text-primary-600"></i>
+                        <span class="text-sm font-medium">Popular</span>
+                    </a>
+                    <a href="#" class="flex flex-col items-center px-4 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-dark-700 transition-colors shrink-0">
+                        <i class="fas fa-clock text-xl mb-1 text-primary-600"></i>
+                        <span class="text-sm font-medium">Latest</span>
+                    </a>
+                    <a href="#" class="flex flex-col items-center px-4 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-dark-700 transition-colors shrink-0">
+                        <i class="fas fa-calendar-star text-xl mb-1 text-primary-600"></i>
+                        <span class="text-sm font-medium">New</span>
+                    </a>
+                    <a href="#" class="flex flex-col items-center px-4 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-dark-700 transition-colors shrink-0">
+                        <i class="fas fa-heart text-xl mb-1 text-primary-600"></i>
+                        <span class="text-sm font-medium">Romance</span>
+                    </a>
+                    <a href="#" class="flex flex-col items-center px-4 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-dark-700 transition-colors shrink-0">
+                        <i class="fas fa-fist-raised text-xl mb-1 text-primary-600"></i>
+                        <span class="text-sm font-medium">Action</span>
+                    </a>
+                    <a href="#" class="flex flex-col items-center px-4 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-dark-700 transition-colors shrink-0">
+                        <i class="fas fa-robot text-xl mb-1 text-primary-600"></i>
+                        <span class="text-sm font-medium">Sci-Fi</span>
+                    </a>
+                    <a href="#" class="flex flex-col items-center px-4 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-dark-700 transition-colors shrink-0">
+                        <i class="fas fa-ghost text-xl mb-1 text-primary-600"></i>
+                        <span class="text-sm font-medium">Horror</span>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Popular Manga Section -->
+        <section class="py-12">
+            <div class="container mx-auto px-4">
+                <div class="flex items-center justify-between mb-8">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white">
+                            <i class="fas fa-fire"></i>
+                        </div>
+                        <h2 class="text-2xl font-bold">Popular Manga This Week</h2>
+                    </div>
+                    <a href="#" class="text-primary-600 dark:text-primary-400 hover:underline flex items-center">
+                        View All <i class="fas fa-chevron-right ml-1 text-sm"></i>
+                    </a>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
+                    <!-- Manga Card 1 -->
+                    <div class="manga-card group">
+                        <a href="#" class="block relative rounded-xl overflow-hidden shadow-lg bg-white dark:bg-dark-700">
+                            <div class="relative pt-[140%]">
+                                <img src="https://via.placeholder.com/200x280/4f46e5/ffffff?text=Manga+1" alt="Manga 1" class="absolute inset-0 w-full h-full object-cover">
+                                <div class="absolute top-2 left-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
+                                    <i class="fas fa-star mr-1"></i> 9.5
+                                </div>
+                                <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+                                    <h3 class="text-white font-bold text-sm line-clamp-1">Attack on Titan: Final Season</h3>
+                                    <p class="text-gray-300 text-xs">Chapter 138</p>
+                                </div>
+                            </div>
+                        </a>
+                        <div class="mt-2 px-1">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <a href="#" class="font-medium text-sm group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors line-clamp-1">Attack on Titan: Final Season</a>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">Action, Drama</p>
+                                </div>
+                                <button class="text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
+                                    <i class="far fa-bookmark"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Manga Card 2 -->
+                    <div class="manga-card group">
+                        <a href="#" class="block relative rounded-xl overflow-hidden shadow-lg bg-white dark:bg-dark-700">
+                            <div class="relative pt-[140%]">
+                                <img src="https://via.placeholder.com/200x280/10b981/ffffff?text=Manga+2" alt="Manga 2" class="absolute inset-0 w-full h-full object-cover">
+                                <div class="absolute top-2 left-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
+                                    <i class="fas fa-star mr-1"></i> 9.2
+                                </div>
+                                <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+                                    <h3 class="text-white font-bold text-sm line-clamp-1">Demon Slayer: Kimetsu no Yaiba</h3>
+                                    <p class="text-gray-300 text-xs">Chapter 205</p>
+                                </div>
+                            </div>
+                        </a>
+                        <div class="mt-2 px-1">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <a href="#" class="font-medium text-sm group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors line-clamp-1">Demon Slayer: Kimetsu no Yaiba</a>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">Action, Supernatural</p>
+                                </div>
+                                <button class="text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
+                                    <i class="far fa-bookmark"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Manga Card 3 -->
+                    <a href="#" class="manga-card block">
+                        <div class="relative rounded-lg overflow-hidden shadow-md bg-white dark:bg-dark-800">
+                            <img src="https://via.placeholder.com/200x280/f59e0b/ffffff?text=Manga+3" alt="Manga 3" class="w-full h-auto">
+                            <div class="absolute top-2 left-2 bg-primary-600 text-white text-xs font-bold px-2 py-1 rounded">
+                                8.9
+                            </div>
+                            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
+                                <h3 class="text-white font-semibold text-sm truncate">One Piece: Wano Country</h3>
+                                <p class="text-gray-300 text-xs">Chapter 1023</p>
+                            </div>
+                        </div>
+                    </a>
+                    
+                    <!-- Manga Card 4 -->
+                    <a href="#" class="manga-card block">
+                        <div class="relative rounded-lg overflow-hidden shadow-md bg-white dark:bg-dark-800">
+                            <img src="https://via.placeholder.com/200x280/ef4444/ffffff?text=Manga+4" alt="Manga 4" class="w-full h-auto">
+                            <div class="absolute top-2 left-2 bg-primary-600 text-white text-xs font-bold px-2 py-1 rounded">
+                                8.7
+                            </div>
+                            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
+                                <h3 class="text-white font-semibold text-sm truncate">Jujutsu Kaisen</h3>
+                                <p class="text-gray-300 text-xs">Chapter 156</p>
+                            </div>
+                        </div>
+                    </a>
+                    
+                    <!-- Manga Card 5 -->
+                    <a href="#" class="manga-card block">
+                        <div class="relative rounded-lg overflow-hidden shadow-md bg-white dark:bg-dark-800">
+                            <img src="https://via.placeholder.com/200x280/8b5cf6/ffffff?text=Manga+5" alt="Manga 5" class="w-full h-auto">
+                            <div class="absolute top-2 left-2 bg-primary-600 text-white text-xs font-bold px-2 py-1 rounded">
+                                8.5
+                            </div>
+                            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
+                                <h3 class="text-white font-semibold text-sm truncate">Chainsaw Man</h3>
+                                <p class="text-gray-300 text-xs">Chapter 97</p>
+                            </div>
+                        </div>
+                    </a>
+                    
+                    <!-- Manga Card 6 -->
+                    <a href="#" class="manga-card block">
+                        <div class="relative rounded-lg overflow-hidden shadow-md bg-white dark:bg-dark-800">
+                            <img src="https://via.placeholder.com/200x280/ec4899/ffffff?text=Manga+6" alt="Manga 6" class="w-full h-auto">
+                            <div class="absolute top-2 left-2 bg-primary-600 text-white text-xs font-bold px-2 py-1 rounded">
+                                8.3
+                            </div>
+                            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
+                                <h3 class="text-white font-semibold text-sm truncate">Tokyo Revengers</h3>
+                                <p class="text-gray-300 text-xs">Chapter 220</p>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Latest Updates Section -->
+        <section class="py-12 bg-gray-100 dark:bg-dark-800">
+            <div class="container mx-auto px-4">
+                <div class="flex items-center justify-between mb-8">
+                    <h2 class="text-2xl font-bold">Latest Updates</h2>
+                    <a href="#" class="text-primary-600 dark:text-primary-400 hover:underline">View All</a>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- Latest Update 1 -->
+                    <div class="bg-white dark:bg-dark-700 rounded-lg shadow-md overflow-hidden">
+                        <div class="flex">
+                            <div class="w-1/3">
+                                <img src="https://via.placeholder.com/200x280/4f46e5/ffffff?text=Manga+1" alt="Manga 1" class="w-full h-full object-cover">
+                            </div>
+                            <div class="w-2/3 p-4">
+                                <h3 class="font-bold text-lg mb-1 truncate">Attack on Titan: Final Season</h3>
+                                <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">By Hajime Isayama</p>
+                                <div class="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-3">
+                                    <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-0.5 rounded mr-2">Action</span>
+                                    <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-0.5 rounded">Drama</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm font-medium">Chapter 138</span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400">2 hours ago</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Latest Update 2 -->
+                    <div class="bg-white dark:bg-dark-700 rounded-lg shadow-md overflow-hidden">
+                        <div class="flex">
+                            <div class="w-1/3">
+                                <img src="https://via.placeholder.com/200x280/10b981/ffffff?text=Manga+2" alt="Manga 2" class="w-full h-full object-cover">
+                            </div>
+                            <div class="w-2/3 p-4">
+                                <h3 class="font-bold text-lg mb-1 truncate">Demon Slayer: Kimetsu no Yaiba</h3>
+                                <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">By Koyoharu Gotouge</p>
+                                <div class="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-3">
+                                    <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-0.5 rounded mr-2">Action</span>
+                                    <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-0.5 rounded">Supernatural</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm font-medium">Chapter 205</span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400">5 hours ago</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Latest Update 3 -->
+                    <div class="bg-white dark:bg-dark-700 rounded-lg shadow-md overflow-hidden">
+                        <div class="flex">
+                            <div class="w-1/3">
+                                <img src="https://via.placeholder.com/200x280/f59e0b/ffffff?text=Manga+3" alt="Manga 3" class="w-full h-full object-cover">
+                            </div>
+                            <div class="w-2/3 p-4">
+                                <h3 class="font-bold text-lg mb-1 truncate">One Piece: Wano Country</h3>
+                                <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">By Eiichiro Oda</p>
+                                <div class="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-3">
+                                    <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-0.5 rounded mr-2">Adventure</span>
+                                    <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-0.5 rounded">Comedy</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm font-medium">Chapter 1023</span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400">1 day ago</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- AI Search Section -->
+        <section id="ai-search" class="py-12">
+            <div class="container mx-auto px-4">
+                <div class="text-center mb-12">
+                    <h2 class="text-2xl font-bold mb-4">Can't Remember the Title?</h2>
+                    <p class="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">Upload a screenshot or take a photo of any manga panel and our AI will find it for you!</p>
+                </div>
+                
+                <div class="bg-white dark:bg-dark-800 rounded-xl shadow-lg overflow-hidden max-w-4xl mx-auto">
+                    <div class="flex flex-col md:flex-row">
+                        <!-- Upload Area -->
+                        <div class="md:w-1/2 p-6 md:p-8">
+                            <div id="dropArea" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg px-6 py-12 text-center transition-colors hover:border-primary-500 cursor-pointer">
+                                <input type="file" id="fileInput" accept="image/*" capture="environment" class="hidden">
+                                <div class="flex justify-center mb-4">
+                                    <i class="fas fa-image text-4xl text-primary-500"></i>
+                                </div>
+                                <h3 class="text-lg font-semibold mb-2">Drag & Drop Image Here</h3>
+                                <p class="text-gray-500 dark:text-gray-400 mb-4">or</p>
+                                <button id="uploadButton" class="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">
+                                    Browse Files
+                                </button>
+                                <button id="cameraButton" class="mt-3 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 dark:hover:bg-dark-600 text-gray-800 dark:text-gray-200 px-6 py-2 rounded-lg font-medium transition-colors">
+                                    <i class="fas fa-camera mr-2"></i> Take Photo
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Results Area -->
+                        <div class="md:w-1/2 bg-gray-50 dark:bg-dark-700 p-6 md:p-8">
+                            <h3 class="text-lg font-semibold mb-4">Search Results</h3>
+                            <div id="resultsContainer" class="text-center py-8">
+                                <div class="flex justify-center mb-4">
+                                    <i class="fas fa-search text-3xl text-gray-400"></i>
+                                </div>
+                                <p class="text-gray-500 dark:text-gray-400">Upload a manga image or take a photo to search</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Genres Section -->
+        <section class="py-12 bg-gray-100 dark:bg-dark-800">
+            <div class="container mx-auto px-4">
+                <h2 class="text-2xl font-bold mb-8 text-center">Browse by Genre</h2>
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    <a href="#" class="block bg-white dark:bg-dark-700 rounded-lg shadow p-4 text-center hover:bg-primary-50 dark:hover:bg-dark-600 transition-colors">
+                        <div class="w-12 h-12 mx-auto mb-2 rounded-full bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-300 flex items-center justify-center">
+                            <i class="fas fa-fist-raised text-xl"></i>
+                        </div>
+                        <span class="font-medium">Action</span>
+                    </a>
+                    <a href="#" class="block bg-white dark:bg-dark-700 rounded-lg shadow p-4 text-center hover:bg-primary-50 dark:hover:bg-dark-600 transition-colors">
+                        <div class="w-12 h-12 mx-auto mb-2 rounded-full bg-pink-100 dark:bg-pink-900 text-pink-600 dark:text-pink-300 flex items-center justify-center">
+                            <i class="fas fa-heart text-xl"></i>
+                        </div>
+                        <span class="font-medium">Romance</span>
+                    </a>
+                    <a href="#" class="block bg-white dark:bg-dark-700 rounded-lg shadow p-4 text-center hover:bg-primary-50 dark:hover:bg-dark-600 transition-colors">
+                        <div class="w-12 h-12 mx-auto mb-2 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 flex items-center justify-center">
+                            <i class="fas fa-robot text-xl"></i>
+                        </div>
+                        <span class="font-medium">Sci-Fi</span>
+                    </a>
+                    <a href="#" class="block bg-white dark:bg-dark-700 rounded-lg shadow p-4 text-center hover:bg-primary-50 dark:hover:bg-dark-600 transition-colors">
+                        <div class="w-12 h-12 mx-auto mb-2 rounded-full bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-300 flex items center-center justify-center">
+                            <i class="fas fa-ghost text-xl"></i>
+                        </div>
+                        <span class="font-medium">Horror</span>
+                    </a>
+                    <a href="#" class="block bg-white dark:bg-dark-700 rounded-lg shadow p-4 text-center hover:bg-primary-50 dark:hover:bg-dark-600 transition-colors">
+                        <div class="w-12 h-12 mx-auto mb-2 rounded-full bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-300 flex items-center justify-center">
+                            <i class="fas fa-laugh-beam text-xl"></i>
+                        </div>
+                        <span class="font-medium">Comedy</span>
+                    </a>
+                    <a href="#" class="block bg-white dark:bg-dark-700 rounded-lg shadow p-4 text-center hover:bg-primary-50 dark:hover:bg-dark-600 transition-colors">
+                        <div class="w-12 h-12 mx-auto mb-2 rounded-full bg-yellow-100 dark:bg-yellow-900 text-yellow-600 dark:text-yellow-300 flex items-center justify-center">
+                            <i class="fas fa-hat-wizard text-xl"></i>
+                        </div>
+                        <span class="font-medium">Fantasy</span>
+                    </a>
+                    <a href="#" class="block bg-white dark:bg-dark-700 rounded-lg shadow p-4 text-center hover:bg-primary-50 dark:hover:bg-dark-600 transition-colors">
+                        <div class="w-12 h-12 mx-auto mb-2 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center">
+                            <i class="fas fa-user-ninja text-xl"></i>
+                        </div>
+                        <span class="font-medium">Adventure</span>
+                    </a>
+                    <a href="#" class="block bg-white dark:bg-dark-700 rounded-lg shadow p-4 text-center hover:bg-primary-50 dark:hover:bg-dark-600 transition-colors">
+                        <div class="w-12 h-12 mx-auto mb-2 rounded-full bg-orange-100 dark:bg-orange-900 text-orange-600 dark:text-orange-300 flex items-center justify-center">
+                            <i class="fas fa-gamepad text-xl"></i>
+                        </div>
+                        <span class="font-medium">Sports</span>
+                    </a>
+                    <a href="#" class="block bg-white dark:bg-dark-700 rounded-lg shadow p-4 text-center hover:bg-primary-50 dark:hover:bg-dark-600 transition-colors">
+                        <div class="w-12 h-12 mx-auto mb-2 rounded-full bg-cyan-100 dark:bg-cyan-900 text-cyan-600 dark:text-cyan-300 flex items-center justify-center">
+                            <i class="fas fa-user-graduate text-xl"></i>
+                        </div>
+                        <span class="font-medium">School Life</span>
+                    </a>
+                    <a href="#" class="block bg-white dark:bg-dark-700 rounded-lg shadow p-4 text-center hover:bg-primary-50 dark:hover:bg-dark-600 transition-colors">
+                        <div class="w-12 h-12 mx-auto mb-2 rounded-full bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300 flex items-center justify-center">
+                            <i class="fas fa-eye text-xl"></i>
+                        </div>
+                        <span class="font-medium">Mystery</span>
+                    </a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-dark-900 text-white pt-12 pb-6">
+        <div class="container mx-auto px-4">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+                <div>
+                    <h3 class="text-xl font-bold mb-4 flex items-center">
+                        <i class="fas fa-book-open mr-2"></i>
+                        <span>MangaVerse</span>
+                    </h3>
+                    <p class="text-gray-400">The ultimate platform for manga, manhwa, and manhua lovers. Read your favorite comics anytime, anywhere.</p>
+                </div>
+                <div>
+                    <h4 class="font-bold text-lg mb-4">Quick Links</h4>
+                    <ul class="space-y-2">
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Home</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Popular</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Latest Updates</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Genres</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="font-bold text-lg mb-4">Community</h4>
+                    <ul class="space-y-2">
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Forums</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Discord</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Twitter</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Instagram</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="font-bold text-lg mb-4">Legal</h4>
+                    <ul class="space-y-2">
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Terms of Service</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Privacy Policy</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">DMCA</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition-colors">Contact Us</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="border-t border-gray-800 pt-6">
+                <p class="text-center text-gray-500 text-sm">© 2023 MangaVerse. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Manga Detail Modal -->
+    <div id="mangaDetailModal" class="fixed inset-0 z-50 overflow-y-auto hidden">
+        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity" aria-hidden="true">
+                <div class="absolute inset-0 bg-gray-900 dark:bg-gray-900 opacity-75"></div>
+            </div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <div class="inline-block align-bottom bg-white dark:bg-dark-700 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full">
+                <div class="px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <div class="flex flex-col md:flex-row">
+                        <div class="md:w-1/3 mb-6 md:mb-0 md:pr-6">
+                            <img src="https://via.placeholder.com/400x600/4f46e5/ffffff?text=Manga" alt="Manga Cover" class="rounded-lg shadow-md w-full h-auto">
+                        </div>
+                        <div class="md:w-2/3">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="text-2xl font-bold mb-2">Attack on Titan: Final Season</h3>
+                                    <p class="text-gray-600 dark:text-gray-300 mb-4">By Hajime Isayama</p>
+                                </div>
+                                <button id="closeDetailModal" class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300">
+                                    <i class="fas fa-times text-xl"></i>
+                                </button>
+                            </div>
+                            <div class="flex flex-wrap gap-2 mb-4">
+                                <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-3 py-1 rounded-full text-sm">Action</span>
+                                <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-3 py-1 rounded-full text-sm">Drama</span>
+                                <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-3 py-1 rounded-full text-sm">Sci-Fi</span>
+                            </div>
+                            <div class="flex items-center mb-4">
+                                <div class="flex mr-2">
+                                    <i class="fas fa-star text-yellow-400"></i>
+                                    <i class="fas fa-star text-yellow-400"></i>
+                                    <i class="fas fa-star text-yellow-400"></i>
+                                    <i class="fas fa-star text-yellow-400"></i>
+                                    <i class="fas fa-star-half-alt text-yellow-400"></i>
+                                </div>
+                                <span class="text-gray-600 dark:text-gray-300 text-sm">4.7 (12,345 ratings)</span>
+                            </div>
+                            <div class="mb-4">
+                                <h4 class="font-bold mb-2">Synopsis</h4>
+                                <p class="text-gray-700 dark:text-gray-300 text-sm">Humanity has been living inside three walls that protect them from the giant Titans. After Wall Maria is breached by the Colossal and Armored Titans, Eren Yeager and his friends join the Survey Corps in their fight against the Titans outside the walls.</p>
+                            </div>
+                            <div class="mb-6">
+                                <h4 class="font-bold mb-2">Details</h4>
+                                <div class="grid grid-cols-2 gap-2 text-sm">
+                                    <div>
+                                        <span class="text-gray-600 dark:text-gray-400">Status:</span>
+                                        <span class="font-medium">Ongoing</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-600 dark:text-gray-400">Chapters:</span>
+                                        <span class="font-medium">138</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-600 dark:text-gray-400">Published:</span>
+                                        <span class="font-medium">2009 - Present</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-600 dark:text-gray-400">Author:</span>
+                                        <span class="font-medium">Hajime Isayama</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex flex-col sm:flex-row gap-3">
+                                <button class="bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex-1 text-center">
+                                    <i class="fas fa-book-open mr-2"></i> Read Now
+                                </button>
+                                <button class="bg-gray-200 dark:bg-dark-600 hover:bg-gray-300 dark:hover:bg-dark-500 text-gray-800 dark:text-gray-200 px-6 py-3 rounded-lg font-medium transition-colors flex-1 text-center">
+                                    <i class="fas fa-bookmark mr-2"></i> Bookmark
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reader Modal -->
+    <div id="readerModal" class="fixed inset-0 z-50 hidden overflow-hidden">
+        <div class="absolute inset-0 bg-black">
+            <!-- Reader Header -->
+            <div id="readerHeader" class="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/80 to-transparent px-4 py-3 flex justify-between items-center transition-opacity duration-300">
+                <button id="closeReader" class="text-white hover:text-gray-300">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+                <h3 class="text-white font-medium truncate mx-4">Attack on Titan - Chapter 138</h3>
+                <div class="flex items-center space-x-3">
+                    <button class="text-white hover:text-gray-300">
+                        <i class="fas fa-cog text-xl"></i>
+                    </button>
+                    <button class="text-white hover:text-gray-300">
+                        <i class="fas fa-bookmark text-xl"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Reader Content -->
+            <div id="readerContent" class="h-full flex items-center justify-center overflow-auto">
+                <div class="max-w-screen-lg w-full px-4 py-16">
+                    <div class="bg-white rounded-lg overflow-hidden">
+                        <div class="reader-container h-96 overflow-y-auto">
+                            <div class="reader-page w-full h-full flex items-center justify-center bg-gray-100">
+                                <p class="text-gray-700">Loading manga pages...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Reader Footer -->
+            <div id="readerFooter" class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-4 py-3 flex justify-between items-center transition-opacity duration-300">
+                <button class="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded">
+                    <i class="fas fa-arrow-left mr-2"></i> Previous Chapter
+                </button>
+                <div class="flex items-center space-x-4 text-white">
+                    <button class="hover:text-gray-300">
+                        <i class="fas fa-th-list"></i>
+                    </button>
+                    <select class="bg-gray-800 text-white border-gray-700 rounded px-2 py-1">
+                        <option>Page 1</option>
+                        <option>Page 2</option>
+                        <option>Page 3</option>
+                    </select>
+                    <span>1/24</span>
+                </div>
+                <button class="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded">
+                    Next Chapter <i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+            
+            <!-- Reader Controls -->
+            <div class="absolute left-1/2 -translate-x-1/2 bottom-20 bg-gray-800 bg-opacity-70 rounded-full p-2 flex items-center space-x-2">
+                <button class="w-10 h-10 rounded-full bg-gray-700 text-white hover:bg-gray-600 flex items-center justify-center">
+                    <i class="fas fa-sun"></i>
+                </button>
+                <button class="w-10 h-10 rounded-full bg-gray-700 text-white hover:bg-gray-600 flex items-center justify-center">
+                    <i class="fas fa-columns"></i>
+                </button>
+                <button class="w-10 h-10 rounded-full bg-gray-700 text-white hover:bg-gray-600 flex items-center justify-center">
+                    <i class="fas fa-expand"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
