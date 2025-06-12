@@ -6,278 +6,6 @@
     <title>MangaVerse | Your Ultimate Manga Reading Experience</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script type="module">
-        import mangaState from './state.js';
-        import { UIComponents } from './components.js';
-        import mangaReader from './reader.js';
-        import { fetchPopularManga, searchManga, fetchMangaDetails } from './mangadex-api.js';
-
-        // Initialize app
-        document.addEventListener('DOMContentLoaded', async () => {
-            // Load popular manga
-            await loadPopularManga();
-            
-            // Initialize search
-            initSearch();
-            
-            // Initialize event listeners
-            initEventListeners();
-        });
-
-        // Load popular manga
-        async function loadPopularManga() {
-            try {
-                const popularMangaContainer = document.querySelector('.grid-cols-2.sm\\:grid-cols-3.md\\:grid-cols-4.lg\\:grid-cols-5.xl\\:grid-cols-6');
-                popularMangaContainer.innerHTML = UIComponents.createSpinner('lg');
-                
-                const popularManga = await fetchPopularManga(6);
-                if (!popularManga || popularManga.length === 0) {
-                    throw new Error('No popular manga found');
-                }
-                
-                popularMangaContainer.innerHTML = popularManga.map(manga => 
-                    UIComponents.createMangaCard(manga)
-                ).join('');
-                
-                // Add click event listeners to manga cards
-                document.querySelectorAll('.manga-card a[data-manga-id]').forEach(card => {
-                    card.addEventListener('click', async (e) => {
-                        e.preventDefault();
-                        const mangaId = card.dataset.mangaId;
-                        const mangaDetail = await fetchMangaDetails(mangaId);
-                        if (mangaDetail) {
-                            showMangaDetail(mangaDetail);
-                        }
-                    });
-                });
-                
-                // Add bookmark event listeners
-                document.querySelectorAll('.bookmark-btn').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const mangaId = btn.dataset.mangaId;
-                        const isBookmarked = mangaState.toggleBookmark(mangaId);
-                        btn.querySelector('i').className = isBookmarked ? 'fas fa-bookmark' : 'far fa-bookmark';
-                        UIComponents.createToast(
-                            isBookmarked ? 'Added to bookmarks' : 'Removed from bookmarks',
-                            isBookmarked ? 'success' : 'info'
-                        );
-                    });
-                });
-                
-            } catch (error) {
-                console.error('Error loading popular manga:', error);
-                const popularMangaContainer = document.querySelector('.grid-cols-2.sm\\:grid-cols-3.md\\:grid-cols-4.lg\\:grid-cols-5.xl\\:grid-cols-6');
-                popularMangaContainer.innerHTML = UIComponents.createErrorMessage('Failed to load popular manga. Please try again later.');
-            }
-        }
-
-        // Initialize search
-        function initSearch() {
-            const searchInput = document.querySelector('input[placeholder="Search manga..."]');
-            let searchTimeout;
-
-            searchInput.addEventListener('input', (e) => {
-                clearTimeout(searchTimeout);
-                searchTimeout = setTimeout(async () => {
-                    const query = e.target.value.trim();
-                    if (query.length >= 2) {
-                        try {
-                            const results = await searchManga(query);
-                            if (results && results.length > 0) {
-                                showSearchResults(results);
-                            } else {
-                                UIComponents.createToast('No results found', 'info');
-                            }
-                        } catch (error) {
-                            console.error('Error searching manga:', error);
-                            UIComponents.createToast('Failed to search manga', 'error');
-                        }
-                    }
-                }, 500);
-            });
-        }
-
-        // Show search results
-        function showSearchResults(results) {
-            const searchResultsContainer = document.getElementById('searchResults');
-            if (!searchResultsContainer) return;
-
-            searchResultsContainer.innerHTML = results.map(manga => `
-                <div class="flex items-center space-x-4 p-4 hover:bg-gray-100 dark:hover:bg-dark-700 rounded-lg cursor-pointer" data-manga-id="${manga.id}">
-                    <img src="${manga.coverUrl}" alt="${manga.title}" class="w-16 h-24 object-cover rounded">
-                    <div>
-                        <h4 class="font-medium">${manga.title}</h4>
-                        <p class="text-sm text-gray-500 dark:text-gray-400">${manga.tags.slice(0, 2).join(', ')}</p>
-                    </div>
-                </div>
-            `).join('');
-
-            // Add click event listeners
-            searchResultsContainer.querySelectorAll('[data-manga-id]').forEach(item => {
-                item.addEventListener('click', async () => {
-                    const mangaId = item.dataset.mangaId;
-                    const mangaDetail = await fetchMangaDetails(mangaId);
-                    if (mangaDetail) {
-                        showMangaDetail(mangaDetail);
-                    }
-                });
-            });
-        }
-
-        // Show manga detail
-        function showMangaDetail(manga) {
-            const modal = document.getElementById('mangaDetailModal');
-            const modalContent = modal.querySelector('.md\\:w-2\\/3');
-            
-            modalContent.innerHTML = `
-                <div class="flex justify-between items-start">
-                    <div>
-                        <h3 class="text-2xl font-bold mb-2">${manga.title}</h3>
-                        <p class="text-gray-600 dark:text-gray-300 mb-4">By ${manga.author}</p>
-                    </div>
-                    <button id="closeDetailModal" class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300">
-                        <i class="fas fa-times text-xl"></i>
-                    </button>
-                </div>
-                <div class="flex flex-wrap gap-2 mb-4">
-                    ${manga.tags.map(tag => `
-                        <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-3 py-1 rounded-full text-sm">${tag}</span>
-                    `).join('')}
-                </div>
-                <div class="mb-4">
-                    <h4 class="font-bold mb-2">Synopsis</h4>
-                    <p class="text-gray-700 dark:text-gray-300 text-sm">${manga.description}</p>
-                </div>
-                <div class="mb-6">
-                    <h4 class="font-bold mb-2">Details</h4>
-                    <div class="grid grid-cols-2 gap-2 text-sm">
-                        <div>
-                            <span class="text-gray-600 dark:text-gray-400">Status:</span>
-                            <span class="font-medium">${manga.status}</span>
-                        </div>
-                        <div>
-                            <span class="text-gray-600 dark:text-gray-400">Chapters:</span>
-                            <span class="font-medium">${manga.chapters || 'N/A'}</span>
-                        </div>
-                        <div>
-                            <span class="text-gray-600 dark:text-gray-400">Published:</span>
-                            <span class="font-medium">${manga.year || 'N/A'}</span>
-                        </div>
-                        <div>
-                            <span class="text-gray-600 dark:text-gray-400">Author:</span>
-                            <span class="font-medium">${manga.author}</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="flex flex-col sm:flex-row gap-3">
-                    <button class="bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex-1 text-center" data-manga-id="${manga.id}">
-                        <i class="fas fa-book-open mr-2"></i> Read Now
-                    </button>
-                    <button class="bg-gray-200 dark:bg-dark-600 hover:bg-gray-300 dark:hover:bg-dark-500 text-gray-800 dark:text-gray-200 px-6 py-3 rounded-lg font-medium transition-colors flex-1 text-center bookmark-btn" data-manga-id="${manga.id}">
-                        <i class="${mangaState.isBookmarked(manga.id) ? 'fas' : 'far'} fa-bookmark mr-2"></i> Bookmark
-                    </button>
-                </div>
-            `;
-
-            modal.classList.remove('hidden');
-            document.body.style.overflow = 'hidden';
-
-            // Add event listeners
-            document.getElementById('closeDetailModal').addEventListener('click', () => {
-                modal.classList.add('hidden');
-                document.body.style.overflow = 'auto';
-            });
-
-            // Add bookmark event listener
-            modal.querySelector('.bookmark-btn').addEventListener('click', () => {
-                const isBookmarked = mangaState.toggleBookmark(manga.id);
-                const icon = modal.querySelector('.bookmark-btn i');
-                icon.className = `${isBookmarked ? 'fas' : 'far'} fa-bookmark mr-2`;
-                UIComponents.createToast(
-                    isBookmarked ? 'Added to bookmarks' : 'Removed from bookmarks',
-                    isBookmarked ? 'success' : 'info'
-                );
-            });
-
-            // Add read now event listener
-            modal.querySelector('button[data-manga-id]').addEventListener('click', () => {
-                modal.classList.add('hidden');
-                showReader(manga);
-            });
-        }
-
-        // Show reader
-        function showReader(manga) {
-            const readerModal = document.getElementById('readerModal');
-            const readerHeader = document.getElementById('readerHeader');
-            const readerContent = document.getElementById('readerContent');
-            
-            readerHeader.querySelector('h3').textContent = `${manga.title} - Chapter 1`;
-            readerContent.innerHTML = UIComponents.createSpinner('lg');
-            
-            readerModal.classList.remove('hidden');
-            document.body.style.overflow = 'hidden';
-
-            // Initialize reader
-            mangaReader.init(manga.id, manga.chapters[0].id);
-
-            // Add event listeners
-            document.addEventListener('keydown', mangaReader.handleKeyPress.bind(mangaReader));
-            readerContent.addEventListener('touchstart', mangaReader.handleTouchStart.bind(mangaReader));
-            readerContent.addEventListener('touchend', mangaReader.handleTouchEnd.bind(mangaReader));
-        }
-
-        // Initialize event listeners
-        function initEventListeners() {
-            // Dark mode toggle
-            const darkModeToggle = document.getElementById('darkModeToggle');
-            const moonIcon = darkModeToggle.querySelector('.fa-moon');
-            const sunIcon = darkModeToggle.querySelector('.fa-sun');
-            
-            darkModeToggle.addEventListener('click', () => {
-                document.documentElement.classList.toggle('dark');
-                const isDark = document.documentElement.classList.contains('dark');
-                
-                if (isDark) {
-                    localStorage.setItem('darkMode', 'enabled');
-                    sunIcon.classList.remove('hidden');
-                    moonIcon.classList.add('hidden');
-                } else {
-                    localStorage.setItem('darkMode', 'disabled');
-                    moonIcon.classList.remove('hidden');
-                    sunIcon.classList.add('hidden');
-                }
-                
-                mangaState.updateSettings({ theme: isDark ? 'dark' : 'light' });
-            });
-            
-            // Mobile menu toggle
-            const mobileMenuButton = document.getElementById('mobileMenuButton');
-            const mobileMenu = document.getElementById('mobileMenu');
-            
-            mobileMenuButton.addEventListener('click', () => {
-                mobileMenu.classList.toggle('hidden');
-            });
-
-            // Close modals when clicking outside
-            window.addEventListener('click', (e) => {
-                const mangaDetailModal = document.getElementById('mangaDetailModal');
-                const readerModal = document.getElementById('readerModal');
-                
-                if (e.target === mangaDetailModal) {
-                    mangaDetailModal.classList.add('hidden');
-                    document.body.style.overflow = 'auto';
-                }
-                
-                if (e.target === readerModal) {
-                    mangaReader.closeReader();
-                }
-            });
-        }
-    </script>
-    <script src="mangadex-api.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -371,17 +99,14 @@
     </style>
 </head>
 <body class="bg-gray-50 dark:bg-dark-900 text-gray-900 dark:text-gray-100 transition-colors duration-300">
-    <!-- Dark mode toggle -->
     <button id="darkModeToggle" class="fixed bottom-6 right-6 z-50 p-3 rounded-full bg-primary-600 text-white shadow-lg hover:bg-primary-700 transition-colors">
         <i class="fas fa-moon hidden"></i>
         <i class="fas fa-sun hidden"></i>
     </button>
 
-    <!-- Header/Navigation -->
     <header class="sticky top-0 z-40 bg-white dark:bg-dark-800 shadow-sm">
         <div class="container mx-auto px-4 py-3">
             <div class="flex items-center justify-between">
-                <!-- Logo -->
                 <div class="flex items-center space-x-2">
                     <a href="#" class="text-2xl font-bold text-primary-600 dark:text-primary-400 flex items-center">
                         <i class="fas fa-book-open mr-2"></i>
@@ -389,7 +114,6 @@
                     </a>
                 </div>
                 
-                <!-- Desktop Navigation -->
                 <nav class="hidden md:flex items-center space-x-8">
                     <a href="#" class="font-medium hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Home</a>
                     <a href="#" class="font-medium hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Popular</a>
@@ -397,7 +121,6 @@
                     <a href="#" class="font-medium hover:text-primary-600 dark:hover:text-primary-400 transition-colors">Genres</a>
                 </nav>
                 
-                <!-- Search and User Actions -->
                 <div class="flex items-center space-x-4">
                     <div class="relative hidden md:block">
                         <input type="text" placeholder="Search manga..." class="pl-10 pr-4 py-2 rounded-full border border-gray-300 dark:border-gray-600 bg-transparent focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent w-64">
@@ -419,7 +142,6 @@
             </div>
         </div>
         
-        <!-- Mobile Menu -->
         <div id="mobileMenu" class="hidden md:hidden bg-white dark:bg-dark-800 border-t border-gray-200 dark:border-gray-700">
             <div class="container mx-auto px-4 py-3">
                 <div class="flex flex-col space-y-4">
@@ -438,9 +160,7 @@
         </div>
     </header>
 
-    <!-- Main Content -->
     <main class="min-h-screen pb-12">
-        <!-- Hero Section -->
         <section class="relative bg-gradient-to-r from-primary-600 to-primary-800 text-white">
             <div class="container mx-auto px-4 py-16 md:py-24">
                 <div class="flex flex-col md:flex-row items-center">
@@ -468,7 +188,6 @@
             </div>
         </section>
 
-        <!-- Quick Access Bar -->
         <section class="bg-white dark:bg-dark-800 shadow-sm">
             <div class="container mx-auto px-4">
                 <div class="flex overflow-x-auto py-3 space-x-6 hide-scrollbar">
@@ -504,7 +223,6 @@
             </div>
         </section>
 
-        <!-- Popular Manga Section -->
         <section class="py-12">
             <div class="container mx-auto px-4">
                 <div class="flex items-center justify-between mb-8">
@@ -519,120 +237,14 @@
                     </a>
                 </div>
                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
-                    <!-- Manga Card 1 -->
-                    <div class="manga-card group">
-                        <a href="#" class="block relative rounded-xl overflow-hidden shadow-lg bg-white dark:bg-dark-700">
-                            <div class="relative pt-[140%]">
-                                <img src="https://via.placeholder.com/200x280/4f46e5/ffffff?text=Manga+1" alt="Manga 1" class="absolute inset-0 w-full h-full object-cover">
-                                <div class="absolute top-2 left-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
-                                    <i class="fas fa-star mr-1"></i> 9.5
-                                </div>
-                                <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
-                                    <h3 class="text-white font-bold text-sm line-clamp-1">Attack on Titan: Final Season</h3>
-                                    <p class="text-gray-300 text-xs">Chapter 138</p>
-                                </div>
-                            </div>
-                        </a>
-                        <div class="mt-2 px-1">
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <a href="#" class="font-medium text-sm group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors line-clamp-1">Attack on Titan: Final Season</a>
-                                    <p class="text-xs text-gray-500 dark:text-gray-400">Action, Drama</p>
-                                </div>
-                                <button class="text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
-                                    <i class="far fa-bookmark"></i>
-                                </button>
-                            </div>
-                        </div>
+                    <div class="col-span-full text-center py-8">
+                        <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 mx-auto mb-4"></div>
+                        <p class="text-gray-600 dark:text-gray-300">Loading popular manga...</p>
                     </div>
-                    
-                    <!-- Manga Card 2 -->
-                    <div class="manga-card group">
-                        <a href="#" class="block relative rounded-xl overflow-hidden shadow-lg bg-white dark:bg-dark-700">
-                            <div class="relative pt-[140%]">
-                                <img src="https://via.placeholder.com/200x280/10b981/ffffff?text=Manga+2" alt="Manga 2" class="absolute inset-0 w-full h-full object-cover">
-                                <div class="absolute top-2 left-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
-                                    <i class="fas fa-star mr-1"></i> 9.2
-                                </div>
-                                <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
-                                    <h3 class="text-white font-bold text-sm line-clamp-1">Demon Slayer: Kimetsu no Yaiba</h3>
-                                    <p class="text-gray-300 text-xs">Chapter 205</p>
-                                </div>
-                            </div>
-                        </a>
-                        <div class="mt-2 px-1">
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <a href="#" class="font-medium text-sm group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors line-clamp-1">Demon Slayer: Kimetsu no Yaiba</a>
-                                    <p class="text-xs text-gray-500 dark:text-gray-400">Action, Supernatural</p>
-                                </div>
-                                <button class="text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
-                                    <i class="far fa-bookmark"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Manga Card 3 -->
-                    <a href="#" class="manga-card block">
-                        <div class="relative rounded-lg overflow-hidden shadow-md bg-white dark:bg-dark-800">
-                            <img src="https://via.placeholder.com/200x280/f59e0b/ffffff?text=Manga+3" alt="Manga 3" class="w-full h-auto">
-                            <div class="absolute top-2 left-2 bg-primary-600 text-white text-xs font-bold px-2 py-1 rounded">
-                                8.9
-                            </div>
-                            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
-                                <h3 class="text-white font-semibold text-sm truncate">One Piece: Wano Country</h3>
-                                <p class="text-gray-300 text-xs">Chapter 1023</p>
-                            </div>
-                        </div>
-                    </a>
-                    
-                    <!-- Manga Card 4 -->
-                    <a href="#" class="manga-card block">
-                        <div class="relative rounded-lg overflow-hidden shadow-md bg-white dark:bg-dark-800">
-                            <img src="https://via.placeholder.com/200x280/ef4444/ffffff?text=Manga+4" alt="Manga 4" class="w-full h-auto">
-                            <div class="absolute top-2 left-2 bg-primary-600 text-white text-xs font-bold px-2 py-1 rounded">
-                                8.7
-                            </div>
-                            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
-                                <h3 class="text-white font-semibold text-sm truncate">Jujutsu Kaisen</h3>
-                                <p class="text-gray-300 text-xs">Chapter 156</p>
-                            </div>
-                        </div>
-                    </a>
-                    
-                    <!-- Manga Card 5 -->
-                    <a href="#" class="manga-card block">
-                        <div class="relative rounded-lg overflow-hidden shadow-md bg-white dark:bg-dark-800">
-                            <img src="https://via.placeholder.com/200x280/8b5cf6/ffffff?text=Manga+5" alt="Manga 5" class="w-full h-auto">
-                            <div class="absolute top-2 left-2 bg-primary-600 text-white text-xs font-bold px-2 py-1 rounded">
-                                8.5
-                            </div>
-                            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
-                                <h3 class="text-white font-semibold text-sm truncate">Chainsaw Man</h3>
-                                <p class="text-gray-300 text-xs">Chapter 97</p>
-                            </div>
-                        </div>
-                    </a>
-                    
-                    <!-- Manga Card 6 -->
-                    <a href="#" class="manga-card block">
-                        <div class="relative rounded-lg overflow-hidden shadow-md bg-white dark:bg-dark-800">
-                            <img src="https://via.placeholder.com/200x280/ec4899/ffffff?text=Manga+6" alt="Manga 6" class="w-full h-auto">
-                            <div class="absolute top-2 left-2 bg-primary-600 text-white text-xs font-bold px-2 py-1 rounded">
-                                8.3
-                            </div>
-                            <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-4">
-                                <h3 class="text-white font-semibold text-sm truncate">Tokyo Revengers</h3>
-                                <p class="text-gray-300 text-xs">Chapter 220</p>
-                            </div>
-                        </div>
-                    </a>
                 </div>
             </div>
         </section>
 
-        <!-- Latest Updates Section -->
         <section class="py-12 bg-gray-100 dark:bg-dark-800">
             <div class="container mx-auto px-4">
                 <div class="flex items-center justify-between mb-8">
@@ -640,73 +252,14 @@
                     <a href="#" class="text-primary-600 dark:text-primary-400 hover:underline">View All</a>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <!-- Latest Update 1 -->
-                    <div class="bg-white dark:bg-dark-700 rounded-lg shadow-md overflow-hidden">
-                        <div class="flex">
-                            <div class="w-1/3">
-                                <img src="https://via.placeholder.com/200x280/4f46e5/ffffff?text=Manga+1" alt="Manga 1" class="w-full h-full object-cover">
-                            </div>
-                            <div class="w-2/3 p-4">
-                                <h3 class="font-bold text-lg mb-1 truncate">Attack on Titan: Final Season</h3>
-                                <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">By Hajime Isayama</p>
-                                <div class="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-3">
-                                    <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-0.5 rounded mr-2">Action</span>
-                                    <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-0.5 rounded">Drama</span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-sm font-medium">Chapter 138</span>
-                                    <span class="text-xs text-gray-500 dark:text-gray-400">2 hours ago</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Latest Update 2 -->
-                    <div class="bg-white dark:bg-dark-700 rounded-lg shadow-md overflow-hidden">
-                        <div class="flex">
-                            <div class="w-1/3">
-                                <img src="https://via.placeholder.com/200x280/10b981/ffffff?text=Manga+2" alt="Manga 2" class="w-full h-full object-cover">
-                            </div>
-                            <div class="w-2/3 p-4">
-                                <h3 class="font-bold text-lg mb-1 truncate">Demon Slayer: Kimetsu no Yaiba</h3>
-                                <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">By Koyoharu Gotouge</p>
-                                <div class="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-3">
-                                    <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-0.5 rounded mr-2">Action</span>
-                                    <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-0.5 rounded">Supernatural</span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-sm font-medium">Chapter 205</span>
-                                    <span class="text-xs text-gray-500 dark:text-gray-400">5 hours ago</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Latest Update 3 -->
-                    <div class="bg-white dark:bg-dark-700 rounded-lg shadow-md overflow-hidden">
-                        <div class="flex">
-                            <div class="w-1/3">
-                                <img src="https://via.placeholder.com/200x280/f59e0b/ffffff?text=Manga+3" alt="Manga 3" class="w-full h-full object-cover">
-                            </div>
-                            <div class="w-2/3 p-4">
-                                <h3 class="font-bold text-lg mb-1 truncate">One Piece: Wano Country</h3>
-                                <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">By Eiichiro Oda</p>
-                                <div class="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-3">
-                                    <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-0.5 rounded mr-2">Adventure</span>
-                                    <span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-0.5 rounded">Comedy</span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-sm font-medium">Chapter 1023</span>
-                                    <span class="text-xs text-gray-500 dark:text-gray-400">1 day ago</span>
-                                </div>
-                            </div>
-                        </div>
+                    <div class="col-span-full text-center py-8">
+                        <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 mx-auto mb-4"></div>
+                        <p class="text-gray-600 dark:text-gray-300">Loading latest updates...</p>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- AI Search Section -->
         <section id="ai-search" class="py-12">
             <div class="container mx-auto px-4">
                 <div class="text-center mb-12">
@@ -716,7 +269,6 @@
                 
                 <div class="bg-white dark:bg-dark-800 rounded-xl shadow-lg overflow-hidden max-w-4xl mx-auto">
                     <div class="flex flex-col md:flex-row">
-                        <!-- Upload Area -->
                         <div class="md:w-1/2 p-6 md:p-8">
                             <div id="dropArea" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg px-6 py-12 text-center transition-colors hover:border-primary-500 cursor-pointer">
                                 <input type="file" id="fileInput" accept="image/*" capture="environment" class="hidden">
@@ -734,7 +286,6 @@
                             </div>
                         </div>
                         
-                        <!-- Results Area -->
                         <div class="md:w-1/2 bg-gray-50 dark:bg-dark-700 p-6 md:p-8">
                             <h3 class="text-lg font-semibold mb-4">Search Results</h3>
                             <div id="resultsContainer" class="text-center py-8">
@@ -749,7 +300,6 @@
             </div>
         </section>
 
-        <!-- Genres Section -->
         <section class="py-12 bg-gray-100 dark:bg-dark-800">
             <div class="container mx-auto px-4">
                 <h2 class="text-2xl font-bold mb-8 text-center">Browse by Genre</h2>
@@ -819,7 +369,6 @@
         </section>
     </main>
 
-    <!-- Footer -->
     <footer class="bg-dark-900 text-white pt-12 pb-6">
         <div class="container mx-auto px-4">
             <div class="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
@@ -864,7 +413,6 @@
         </div>
     </footer>
 
-    <!-- Manga Detail Modal -->
     <div id="mangaDetailModal" class="fixed inset-0 z-50 overflow-y-auto hidden">
         <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
             <div class="fixed inset-0 transition-opacity" aria-hidden="true">
@@ -942,10 +490,8 @@
         </div>
     </div>
 
-    <!-- Reader Modal -->
     <div id="readerModal" class="fixed inset-0 z-50 hidden overflow-hidden">
         <div class="absolute inset-0 bg-black">
-            <!-- Reader Header -->
             <div id="readerHeader" class="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/80 to-transparent px-4 py-3 flex justify-between items-center transition-opacity duration-300">
                 <button id="closeReader" class="text-white hover:text-gray-300">
                     <i class="fas fa-times text-xl"></i>
@@ -961,7 +507,6 @@
                 </div>
             </div>
             
-            <!-- Reader Content -->
             <div id="readerContent" class="h-full flex items-center justify-center overflow-auto">
                 <div class="max-w-screen-lg w-full px-4 py-16">
                     <div class="bg-white rounded-lg overflow-hidden">
@@ -974,7 +519,6 @@
                 </div>
             </div>
             
-            <!-- Reader Footer -->
             <div id="readerFooter" class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-4 py-3 flex justify-between items-center transition-opacity duration-300">
                 <button class="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded">
                     <i class="fas fa-arrow-left mr-2"></i> Previous Chapter
@@ -995,7 +539,6 @@
                 </button>
             </div>
             
-            <!-- Reader Controls -->
             <div class="absolute left-1/2 -translate-x-1/2 bottom-20 bg-gray-800 bg-opacity-70 rounded-full p-2 flex items-center space-x-2">
                 <button class="w-10 h-10 rounded-full bg-gray-700 text-white hover:bg-gray-600 flex items-center justify-center">
                     <i class="fas fa-sun"></i>
@@ -1009,5 +552,800 @@
             </div>
         </div>
     </div>
+
+    <script type="module">
+        // MangaDex API Functions (copied from mangadex-api.js)
+        const MANGADEX_API_BASE_URL = 'https://api.mangadex.org';
+        const UPLOADS_API_BASE_URL = 'https://uploads.mangadex.org';
+
+        async function fetchFromMangaDexApi(endpoint, params = {}) {
+            const url = new URL(`${MANGADEX_API_BASE_URL}${endpoint}`);
+            Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
+
+            try {
+                const response = await fetch(url.toString(), {
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`MangaDex API Error: ${response.status} - ${errorData.errors?.[0]?.detail || response.statusText}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error(`Failed to fetch from MangaDex API: ${error}`);
+                throw error;
+            }
+        }
+
+        async function getMangaList(query = '', limit = 20, offset = 0, includes = ['cover_art', 'author', 'artist'], order = { 'followedCount': 'desc' }) {
+            const params = {
+                limit: limit,
+                offset: offset,
+                'includes[]': includes,
+                'order[followedCount]': order.followedCount,
+            };
+
+            if (query) {
+                params.title = query;
+            }
+
+            try {
+                const data = await fetchFromMangaDexApi('/manga', params);
+                return data.data.map(manga => {
+                    const attributes = manga.attributes;
+                    const coverArtRelationship = manga.relationships.find(rel => rel.type === 'cover_art');
+                    const authorRelationship = manga.relationships.find(rel => rel.type === 'author');
+
+                    return {
+                        id: manga.id,
+                        title: attributes.title.en || Object.values(attributes.title)[0],
+                        description: attributes.description.en || Object.values(attributes.description)[0] || 'No description available.',
+                        status: attributes.status,
+                        year: attributes.year,
+                        contentRating: attributes.contentRating,
+                        tags: attributes.tags.map(tag => tag.attributes.name.en),
+                        altTitles: attributes.altTitles.map(alt => Object.values(alt)[0]),
+                        lastChapter: attributes.lastChapter,
+                        lastVolume: attributes.lastVolume,
+                        publicationDemographic: attributes.publicationDemographic,
+                        coverArtFileName: coverArtRelationship ? coverArtRelationship.attributes.fileName : null,
+                        author: authorRelationship ? authorRelationship.attributes.name : 'Unknown',
+                    };
+                });
+            } catch (error) {
+                console.error("Error fetching manga list:", error);
+                return [];
+            }
+        }
+
+        async function getMangaDetails(mangaId, includes = ['cover_art', 'author', 'artist', 'tag']) {
+            try {
+                const data = await fetchFromMangaDexApi(`/manga/${mangaId}`, { 'includes[]': includes });
+                const manga = data.data;
+                const attributes = manga.attributes;
+                const coverArtRelationship = manga.relationships.find(rel => rel.type === 'cover_art');
+                const authorRelationship = manga.relationships.find(rel => rel.type === 'author');
+                const artistRelationship = manga.relationships.find(rel => rel.type === 'artist');
+
+                return {
+                    id: manga.id,
+                    title: attributes.title.en || Object.values(attributes.title)[0],
+                    description: attributes.description.en || Object.values(attributes.description)[0] || 'No description available.',
+                    status: attributes.status,
+                    year: attributes.year,
+                    contentRating: attributes.contentRating,
+                    tags: attributes.tags.map(tag => tag.attributes.name.en),
+                    altTitles: attributes.altTitles.map(alt => Object.values(alt)[0]),
+                    lastChapter: attributes.lastChapter,
+                    lastVolume: attributes.lastVolume,
+                    publicationDemographic: attributes.publicationDemographic,
+                    coverArtFileName: coverArtRelationship ? coverArtRelationship.attributes.fileName : null,
+                    author: authorRelationship ? authorRelationship.attributes.name : 'Unknown',
+                    artist: artistRelationship ? artistRelationship.attributes.name : 'Unknown',
+                };
+            } catch (error) {
+                console.error(`Error fetching manga details for ${mangaId}:`, error);
+                return null;
+            }
+        }
+
+        function getCoverArtUrl(mangaId, fileName, quality = 'full') {
+            if (!mangaId || !fileName) {
+                return `https://via.placeholder.com/200x280?text=No+Cover`;
+            }
+            const qualityPrefix = quality === 'thumb' ? '.256.jpg' : '';
+            return `${UPLOADS_API_BASE_URL}/covers/${mangaId}/${fileName}${qualityPrefix}`;
+        }
+
+        async function getMangaChapters(mangaId, limit = 500, offset = 0) {
+            try {
+                const data = await fetchFromMangaDexApi('/chapter', {
+                    'manga': mangaId,
+                    limit: limit,
+                    offset: offset,
+                    order: {
+                        chapter: 'asc',
+                        createdAt: 'asc'
+                    },
+                    translatedLanguage: ['en'],
+                    'includes[]': ['scanlation_group']
+                });
+
+                return data.data.map(chapter => {
+                    const attributes = chapter.attributes;
+                    const scanlationGroup = chapter.relationships.find(rel => rel.type === 'scanlation_group');
+                    return {
+                        id: chapter.id,
+                        chapter: attributes.chapter,
+                        title: attributes.title,
+                        pages: attributes.pages,
+                        publishAt: attributes.publishAt,
+                        externalUrl: attributes.externalUrl,
+                        scanlationGroup: scanlationGroup ? scanlationGroup.attributes.name : 'Unknown',
+                    };
+                });
+            } catch (error) {
+                console.error(`Error fetching chapters for manga ${mangaId}:`, error);
+                return [];
+            }
+        }
+
+        async function getChapterImages(chapterId, dataSaver = true) {
+            try {
+                const data = await fetchFromMangaDexApi(`/at-home/server/${chapterId}`);
+                const chapterHash = data.chapter.hash;
+                const images = dataSaver ? data.chapter.dataSaver : data.chapter.data;
+
+                return {
+                    baseUrl: data.baseUrl,
+                    chapterHash: chapterHash,
+                    images: images
+                };
+            } catch (error) {
+                console.error(`Error fetching chapter images for ${chapterId}:`, error);
+                return null;
+            }
+        }
+
+        function buildChapterImageUrls(baseUrl, chapterHash, imageFileNames, dataSaver = true) {
+            const qualityPrefix = dataSaver ? 'data-saver' : 'data';
+            return imageFileNames.map(fileName => {
+                return `${baseUrl}/${qualityPrefix}/${chapterHash}/${fileName}`;
+            });
+        }
+
+        // Dark Mode Toggle
+        const darkModeToggle = document.getElementById('darkModeToggle');
+        const moonIcon = darkModeToggle.querySelector('.fa-moon');
+        const sunIcon = darkModeToggle.querySelector('.fa-sun');
+        
+        // Check for saved dark mode preference
+        if (localStorage.getItem('darkMode') === 'enabled' || (!localStorage.getItem('darkMode') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+            sunIcon.classList.remove('hidden');
+            moonIcon.classList.add('hidden');
+        } else {
+            moonIcon.classList.remove('hidden');
+            sunIcon.classList.add('hidden');
+        }
+        
+        darkModeToggle.addEventListener('click', () => {
+            document.documentElement.classList.toggle('dark');
+            
+            if (document.documentElement.classList.contains('dark')) {
+                localStorage.setItem('darkMode', 'enabled');
+                sunIcon.classList.remove('hidden');
+                moonIcon.classList.add('hidden');
+            } else {
+                localStorage.setItem('darkMode', 'disabled');
+                moonIcon.classList.remove('hidden');
+                sunIcon.classList.add('hidden');
+            }
+        });
+        
+        // Mobile Menu Toggle
+        const mobileMenuButton = document.getElementById('mobileMenuButton');
+        const mobileMenu = document.getElementById('mobileMenu');
+        
+        mobileMenuButton.addEventListener('click', () => {
+            mobileMenu.classList.toggle('hidden');
+        });
+        
+        // Functions to render manga sections
+        async function renderPopularManga() {
+            const popularMangaSection = document.querySelector('.grid.grid-cols-2.sm\\:grid-cols-3.md\\:grid-cols-4.lg\\:grid-cols-5.xl\\:grid-cols-6.gap-4.md\\:gap-6');
+            popularMangaSection.innerHTML = `
+                <div class="col-span-full text-center py-8">
+                    <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 mx-auto mb-4"></div>
+                    <p class="text-gray-600 dark:text-gray-300">Loading popular manga...</p>
+                </div>
+            `;
+            
+            try {
+                const mangaList = await getMangaList('', 12, 0, ['cover_art', 'author']); // Ambil 12 manga populer
+                popularMangaSection.innerHTML = ''; // Bersihkan loader
+
+                if (mangaList.length === 0) {
+                    popularMangaSection.innerHTML = '<p class="col-span-full text-center text-gray-500 dark:text-gray-400">No popular manga found.</p>';
+                    return;
+                }
+
+                mangaList.forEach(manga => {
+                    const coverUrl = manga.coverArtFileName ? getCoverArtUrl(manga.id, manga.coverArtFileName, 'thumb') : 'https://via.placeholder.com/200x280?text=No+Cover';
+                    const title = manga.title;
+                    const genres = manga.tags.slice(0, 2).join(', '); // Ambil 2 genre pertama
+                    const lastChapterDisplay = manga.lastChapter ? `Chapter ${manga.lastChapter}` : 'N/A';
+
+                    const mangaCardHtml = `
+                        <div class="manga-card group" data-manga-id="${manga.id}">
+                            <a href="#" class="block relative rounded-xl overflow-hidden shadow-lg bg-white dark:bg-dark-700">
+                                <div class="relative pt-[140%]">
+                                    <img src="${coverUrl}" alt="${title} Cover" class="absolute inset-0 w-full h-full object-cover">
+                                    <div class="absolute top-2 left-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
+                                        <i class="fas fa-star mr-1"></i> ${manga.rating ? manga.rating.toFixed(1) : 'N/A'}
+                                    </div>
+                                    <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+                                        <h3 class="text-white font-bold text-sm line-clamp-1">${title}</h3>
+                                        <p class="text-gray-300 text-xs">${lastChapterDisplay}</p>
+                                    </div>
+                                </div>
+                            </a>
+                            <div class="mt-2 px-1">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <a href="#" class="font-medium text-sm group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors line-clamp-1">${title}</a>
+                                        <p class="text-xs text-gray-500 dark:text-gray-400">${genres}</p>
+                                    </div>
+                                    <button class="text-gray-400 hover:text-primary-600 dark:hover:text-primary-400">
+                                        <i class="far fa-bookmark"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    popularMangaSection.insertAdjacentHTML('beforeend', mangaCardHtml);
+                });
+
+                attachMangaCardClickListeners();
+
+            } catch (error) {
+                console.error("Failed to render popular manga:", error);
+                popularMangaSection.innerHTML = '<p class="col-span-full text-center text-red-500 dark:text-red-400">Failed to load manga. Please try again later.</p>';
+            }
+        }
+
+        async function renderLatestManga() {
+            const latestMangaSection = document.querySelector('.grid.grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-3.gap-6');
+            latestMangaSection.innerHTML = `
+                <div class="col-span-full text-center py-8">
+                    <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 mx-auto mb-4"></div>
+                    <p class="text-gray-600 dark:text-gray-300">Loading latest updates...</p>
+                </div>
+            `;
+
+            try {
+                const popularManga = await getMangaList('', 6, 0, ['cover_art', 'author']); // Ambil 6 manga terpopuler
+
+                latestMangaSection.innerHTML = ''; // Bersihkan loader
+
+                if (popularManga.length === 0) {
+                    latestMangaSection.innerHTML = '<p class="col-span-full text-center text-gray-500 dark:text-gray-400">No latest updates found.</p>';
+                    return;
+                }
+
+                for (const manga of popularManga) {
+                    const chapters = await getMangaChapters(manga.id, 1); // Ambil chapter terakhir
+                    const latestChapter = chapters.length > 0 ? chapters[0] : null;
+
+                    const coverUrl = manga.coverArtFileName ? getCoverArtUrl(manga.id, manga.coverArtFileName, 'thumb') : 'https://via.placeholder.com/200x280?text=No+Cover';
+                    const title = manga.title;
+                    const author = manga.author;
+                    const genres = manga.tags.slice(0, 2).map(tag => `<span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-2 py-0.5 rounded mr-2">${tag}</span>`).join('');
+                    
+                    let chapterInfo = '<span class="text-sm font-medium">N/A</span>';
+                    let timeAgo = '<span class="text-xs text-gray-500 dark:text-gray-400">N/A</span>';
+
+                    if (latestChapter) {
+                        chapterInfo = `<span class="text-sm font-medium">Chapter ${latestChapter.chapter || 'N/A'} - ${latestChapter.title || 'No Title'}</span>`;
+                        const publishedDate = new Date(latestChapter.publishAt);
+                        const now = new Date();
+                        const diffMs = now - publishedDate;
+                        const diffMinutes = Math.round(diffMs / (1000 * 60));
+                        const diffHours = Math.round(diffMs / (1000 * 60 * 60));
+                        const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+                        
+                        if (diffMinutes < 60) {
+                            timeAgo = `<span class="text-xs text-gray-500 dark:text-gray-400">${diffMinutes} minutes ago</span>`;
+                        } else if (diffHours < 24) {
+                            timeAgo = `<span class="text-xs text-gray-500 dark:text-gray-400">${diffHours} hours ago</span>`;
+                        } else {
+                            timeAgo = `<span class="text-xs text-gray-500 dark:text-gray-400">${diffDays} days ago</span>`;
+                        }
+                    }
+
+                    const latestUpdateCardHtml = `
+                        <div class="bg-white dark:bg-dark-700 rounded-lg shadow-md overflow-hidden">
+                            <div class="flex">
+                                <div class="w-1/3">
+                                    <img src="${coverUrl}" alt="${title} Cover" class="w-full h-full object-cover">
+                                </div>
+                                <div class="w-2/3 p-4">
+                                    <h3 class="font-bold text-lg mb-1 truncate">${title}</h3>
+                                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">By ${author}</p>
+                                    <div class="flex flex-wrap items-center text-sm text-gray-500 dark:text-gray-400 mb-3">
+                                        ${genres}
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        ${chapterInfo}
+                                        ${timeAgo}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    latestMangaSection.insertAdjacentHTML('beforeend', latestUpdateCardHtml);
+                }
+            } catch (error) {
+                console.error("Failed to render latest manga:", error);
+                latestMangaSection.innerHTML = '<p class="col-span-full text-center text-red-500 dark:text-red-400">Failed to load latest updates. Please try again later.</p>';
+            }
+        }
+
+        async function populateMangaDetailModal(mangaId) {
+            const modalContent = mangaDetailModal.querySelector('.inline-block');
+            modalContent.innerHTML = `
+                <div class="px-4 pt-5 pb-4 sm:p-6 sm:pb-4 text-center">
+                    <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 mx-auto mb-4"></div>
+                    <p class="text-gray-600 dark:text-gray-300">Loading manga details...</p>
+                </div>
+            `;
+
+            try {
+                const manga = await getMangaDetails(mangaId);
+                if (!manga) {
+                    modalContent.innerHTML = '<p class="px-4 pt-5 pb-4 sm:p-6 sm:pb-4 text-center text-red-500 dark:text-red-400">Manga details not found.</p>';
+                    return;
+                }
+
+                const coverUrl = manga.coverArtFileName ? getCoverArtUrl(manga.id, manga.coverArtFileName) : 'https://via.placeholder.com/400x600?text=No+Cover';
+                const genresHtml = manga.tags.map(tag => `<span class="bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 px-3 py-1 rounded-full text-sm">${tag}</span>`).join('');
+                
+                const ratingDisplay = 'N/A';
+                const totalRatingsDisplay = 'N/A';
+
+                modalContent.innerHTML = `
+                    <div class="px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                        <div class="flex flex-col md:flex-row">
+                            <div class="md:w-1/3 mb-6 md:mb-0 md:pr-6">
+                                <img src="${coverUrl}" alt="${manga.title} Cover" class="rounded-lg shadow-md w-full h-auto">
+                            </div>
+                            <div class="md:w-2/3">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <h3 class="text-2xl font-bold mb-2">${manga.title}</h3>
+                                        <p class="text-gray-600 dark:text-gray-300 mb-4">By ${manga.author}</p>
+                                    </div>
+                                    <button id="closeDetailModal" class="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300">
+                                        <i class="fas fa-times text-xl"></i>
+                                    </button>
+                                </div>
+                                <div class="flex flex-wrap gap-2 mb-4">
+                                    ${genresHtml}
+                                </div>
+                                <div class="flex items-center mb-4">
+                                    <div class="flex mr-2">
+                                        <i class="fas fa-star text-yellow-400"></i>
+                                        <i class="fas fa-star text-yellow-400"></i>
+                                        <i class="fas fa-star text-yellow-400"></i>
+                                        <i class="fas fa-star text-yellow-400"></i>
+                                        <i class="fas fa-star-half-alt text-yellow-400"></i>
+                                    </div>
+                                    <span class="text-gray-600 dark:text-gray-300 text-sm">${ratingDisplay} (${totalRatingsDisplay} ratings)</span>
+                                </div>
+                                <div class="mb-4">
+                                    <h4 class="font-bold mb-2">Synopsis</h4>
+                                    <p class="text-gray-700 dark:text-gray-300 text-sm">${manga.description}</p>
+                                </div>
+                                <div class="mb-6">
+                                    <h4 class="font-bold mb-2">Details</h4>
+                                    <div class="grid grid-cols-2 gap-2 text-sm">
+                                        <div>
+                                            <span class="text-gray-600 dark:text-gray-400">Status:</span>
+                                            <span class="font-medium">${manga.status}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-600 dark:text-gray-400">Chapters:</span>
+                                            <span class="font-medium">${manga.lastChapter || 'N/A'}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-600 dark:text-gray-400">Published:</span>
+                                            <span class="font-medium">${manga.year || 'N/A'}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-600 dark:text-gray-400">Author:</span>
+                                            <span class="font-medium">${manga.author}</span>
+                                        </div>
+                                        <div>
+                                            <span class="text-gray-600 dark:text-gray-400">Artist:</span>
+                                            <span class="font-medium">${manga.artist || 'N/A'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="flex flex-col sm:flex-row gap-3">
+                                    <button id="readNowButton" data-manga-id="${manga.id}" class="bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex-1 text-center">
+                                        <i class="fas fa-book-open mr-2"></i> Read Now
+                                    </button>
+                                    <button class="bg-gray-200 dark:bg-dark-600 hover:bg-gray-300 dark:hover:bg-dark-500 text-gray-800 dark:text-gray-200 px-6 py-3 rounded-lg font-medium transition-colors flex-1 text-center">
+                                        <i class="fas fa-bookmark mr-2"></i> Bookmark
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('closeDetailModal').addEventListener('click', () => {
+                    mangaDetailModal.classList.add('hidden');
+                    document.body.style.overflow = 'auto';
+                });
+
+                document.getElementById('readNowButton').addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    const mangaIdToRead = e.currentTarget.dataset.mangaId;
+                    const chapters = await getMangaChapters(mangaIdToRead, 1);
+                    if (chapters.length > 0) {
+                        openReaderModal(chapters[0].id, manga.title, chapters[0].chapter);
+                    } else {
+                        alert('No chapters found for this manga.');
+                    }
+                });
+
+            } catch (error) {
+                console.error("Failed to populate manga detail modal:", error);
+                modalContent.innerHTML = '<p class="px-4 pt-5 pb-4 sm:p-6 sm:pb-4 text-center text-red-500 dark:text-red-400">Error loading details. Please try again.</p>';
+            }
+        }
+
+        async function openReaderModal(chapterId, mangaTitle, chapterNumber) {
+            document.body.style.overflow = 'hidden';
+            readerModal.classList.remove('hidden');
+
+            const readerTitle = readerModal.querySelector('#readerHeader h3');
+            readerTitle.textContent = `${mangaTitle} - Chapter ${chapterNumber}`;
+
+            const readerContentDiv = readerModal.querySelector('#readerContent');
+            readerContentDiv.innerHTML = `
+                <div class="h-full flex items-center justify-center overflow-auto">
+                    <div class="max-w-screen-lg w-full px-4 py-16 text-center">
+                        <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 mx-auto mb-4"></div>
+                        <p class="text-white">Loading chapter pages...</p>
+                    </div>
+                </div>
+            `;
+
+            try {
+                const chapterImagesData = await getChapterImages(chapterId);
+                if (!chapterImagesData || chapterImagesData.images.length === 0) {
+                    readerContentDiv.innerHTML = `
+                        <div class="h-full flex items-center justify-center overflow-auto">
+                            <div class="max-w-screen-lg w-full px-4 py-16 text-center">
+                                <p class="text-red-400">Failed to load chapter images or no images found.</p>
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const imageUrls = buildChapterImageUrls(chapterImagesData.baseUrl, chapterImagesData.chapterHash, chapterImagesData.images);
+                
+                let pagesHtml = '<div class="w-full max-w-screen-md mx-auto reader-container overflow-y-auto h-full">';
+                imageUrls.forEach((url, index) => {
+                    pagesHtml += `
+                        <img src="${url}" class="w-full reader-page mb-4 rounded-lg shadow-lg" alt="Page ${index + 1}" loading="lazy">
+                    `;
+                });
+                pagesHtml += '</div>';
+                
+                readerContentDiv.innerHTML = pagesHtml;
+
+                const pageCountSpan = readerModal.querySelector('#readerFooter span:last-child');
+                pageCountSpan.textContent = `1/${imageUrls.length}`;
+
+                const chapterSelect = readerModal.querySelector('#readerFooter select');
+                chapterSelect.innerHTML = '';
+                imageUrls.forEach((_, index) => {
+                    const option = document.createElement('option');
+                    option.value = index + 1;
+                    option.textContent = `Page ${index + 1}`;
+                    chapterSelect.appendChild(option);
+                });
+
+                const readerScrollContainer = readerContentDiv.querySelector('.reader-container');
+                if (readerScrollContainer) {
+                    readerScrollContainer.addEventListener('scroll', () => {
+                        const pageHeight = readerScrollContainer.scrollHeight / imageUrls.length;
+                        const currentPage = Math.ceil(readerScrollContainer.scrollTop / pageHeight) + 1;
+                        pageCountSpan.textContent = `${Math.min(currentPage, imageUrls.length)}/${imageUrls.length}`;
+                        chapterSelect.value = Math.min(currentPage, imageUrls.length);
+                    });
+                }
+
+
+            } catch (error) {
+                console.error("Error loading chapter images:", error);
+                readerContentDiv.innerHTML = `
+                    <div class="h-full flex items-center justify-center overflow-auto">
+                        <div class="max-w-screen-lg w-full px-4 py-16 text-center">
+                            <p class="text-red-400">Error loading chapter. Please try again.</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function attachMangaCardClickListeners() {
+            const mangaCards = document.querySelectorAll('.manga-card');
+            mangaCards.forEach(card => {
+                // Ensure no duplicate listeners by removing before adding
+                card.removeEventListener('click', handleMangaCardClick); 
+                card.addEventListener('click', handleMangaCardClick);
+            });
+        }
+
+        function handleMangaCardClick(e) {
+            e.preventDefault();
+            const mangaCard = e.currentTarget;
+            const mangaId = mangaCard.dataset.mangaId;
+            if (mangaId) {
+                mangaDetailModal.classList.remove('hidden');
+                document.body.style.overflow = 'hidden';
+                populateMangaDetailModal(mangaId);
+            }
+        }
+
+        const heroReadNowButton = document.querySelector('.hero-section .bg-white.text-primary-600');
+        if (heroReadNowButton) {
+            heroReadNowButton.addEventListener('click', async (e) => {
+                e.preventDefault();
+                try {
+                    const popularManga = await getMangaList('', 1, 0, ['cover_art', 'author']);
+                    if (popularManga.length > 0) {
+                        const mangaId = popularManga[0].id;
+                        const chapters = await getMangaChapters(mangaId, 1);
+                        if (chapters.length > 0) {
+                            openReaderModal(chapters[0].id, popularManga[0].title, chapters[0].chapter);
+                        } else {
+                            alert('No chapters found for the featured manga.');
+                        }
+                    } else {
+                        alert('No featured manga found to read.');
+                    }
+                } catch (error) {
+                    console.error("Error clicking hero read now:", error);
+                    alert('Could not start reading. Please try again later.');
+                }
+            });
+        }
+        
+        const mangaDetailModal = document.getElementById('mangaDetailModal');
+        const closeDetailModal = document.getElementById('closeDetailModal');
+        
+        window.addEventListener('click', (e) => {
+            if (e.target === mangaDetailModal) {
+                mangaDetailModal.classList.add('hidden');
+                document.body.style.overflow = 'auto';
+            }
+        });
+        
+        // AI Image Search Functionality
+        const dropArea = document.getElementById('dropArea');
+        const fileInput = document.getElementById('fileInput');
+        const uploadButton = document.getElementById('uploadButton');
+        const cameraButton = document.getElementById('cameraButton');
+        const resultsContainer = document.getElementById('resultsContainer');
+        
+        // Prevent default drag behaviors
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        // Highlight drop area when item is dragged over it
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+        
+        function highlight() {
+            dropArea.classList.add('border-primary-500', 'bg-primary-50', 'dark:bg-dark-700');
+        }
+        
+        function unhighlight() {
+            dropArea.classList.remove('border-primary-500', 'bg-primary-50', 'dark:bg-dark-700');
+        }
+        
+        // Handle dropped files
+        dropArea.addEventListener('drop', handleDrop, false);
+        
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+        
+        // Handle file selection via button
+        uploadButton.addEventListener('click', () => {
+            fileInput.click();
+        });
+        
+        fileInput.addEventListener('change', function() {
+            if (this.files.length) {
+                handleFiles(this.files);
+            }
+        });
+        
+        // Handle camera capture
+        cameraButton.addEventListener('click', () => {
+            fileInput.setAttribute('capture', 'environment');
+            fileInput.click();
+        });
+        
+        // Process uploaded files
+        function handleFiles(files) {
+            const file = files[0];
+            if (file && file.type.startsWith('image/')) {
+                displayPreview(file);
+                simulateSearch(file);
+            }
+        }
+        
+        // Display image preview
+        function displayPreview(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                dropArea.innerHTML = `
+                    <div class="relative h-full">
+                        <img src="${e.target.result}" alt="Preview" class="max-h-64 mx-auto rounded">
+                        <p class="mt-4 text-gray-700 dark:text-gray1-300">${file.name}</p>
+                        <button id="changeImage" class="mt-3 text-primary-600 dark:text-primary-400 hover:underline">Change Image</button>
+                    </div>
+                `;
+                
+                document.getElementById('changeImage').addEventListener('click', resetUpload);
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        // Simulate AI search (for demo)
+        function simulateSearch(file) {
+            resultsContainer.innerHTML = `
+                <div class="flex flex-col items-center justify-center">
+                    <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 mb-4"></div>
+                    <p>Searching for matching manga...</p>
+                </div>
+            `;
+            
+            // Simulate API call delay
+            setTimeout(() => {
+                showResults();
+            }, 2000);
+        }
+        
+        // Show dummy results (for demo)
+        function showResults() {
+            resultsContainer.innerHTML = `
+                <div class="fade-in">
+                    <h4 class="font-bold mb-4 text-lg">We found a match!</h4>
+                    <div class="flex items-center space-x-4">
+                        <img src="https://via.placeholder.com/80x120/4f46e5/ffffff?text=AOT" alt="Manga Cover" class="w-20 h-auto rounded shadow">
+                        <div>
+                            <h5 class="font-bold">Attack on Titan: Final Season</h5>
+                            <p class="text-sm text-gray-600 dark:text-gray-300 mb-2">By Hajime Isayama</p>
+                            <button class="bg-primary-600 hover:bg-primary-700 text-white px-4 py-1 rounded text-sm">
+                                View Details
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mt-6">
+                        <p class="text-sm text-gray-600 dark:text-gray-300 mb-2">Confidence: 92%</p>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">Chapter 138 - Page 12</p>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Reset upload
+        function resetUpload() {
+            dropArea.innerHTML = `
+                <div class="flex justify-center mb-4">
+                    <i class="fas fa-image text-4xl text-primary-500"></i>
+                </div>
+                <h3 class="text-lg font-semibold mb-2">Drag & Drop Image Here</h3>
+                <p class="text-gray-500 dark:text-gray-400 mb-4">or</p>
+                <button id="uploadButton" class="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">
+                    Browse Files
+                </button>
+                <button id="cameraButton" class="mt-3 bg-gray-100 dark:bg-dark-700 hover:bg-gray-200 dark:hover:bg-dark-600 text-gray-800 dark:text-gray-200 px-6 py-2 rounded-lg font-medium transition-colors">
+                    <i class="fas fa-camera mr-2"></i> Take Photo
+                </button>
+            `;
+            
+            // Reattach event listeners
+            document.getElementById('uploadButton').addEventListener('click', () => fileInput.click());
+            document.getElementById('cameraButton').addEventListener('click', () => {
+                fileInput.setAttribute('capture', 'environment');
+                fileInput.click();
+            });
+            
+            resultsContainer.innerHTML = `
+                <div class="flex justify-center mb-4">
+                    <i class="fas fa-search text-3xl text-gray-400"></i>
+                </div>
+                <p class="text-gray-500 dark:text-gray-400">Upload a manga image or take a photo to search</p>
+            `;
+        }
+        
+        // Reader Modal
+        const readerModal = document.getElementById('readerModal');
+        const closeReader = document.getElementById('closeReader');
+        const readerHeader = document.getElementById('readerHeader');
+        const readerFooter = document.getElementById('readerFooter');
+        const readerContent = document.getElementById('readerContent');
+        
+        let hideControlsTimeout;
+        
+        function showReaderControls() {
+            readerHeader.classList.remove('opacity-0');
+            readerFooter.classList.remove('opacity-0');
+            
+            clearTimeout(hideControlsTimeout);
+            hideControlsTimeout = setTimeout(() => {
+                readerHeader.classList.add('opacity-0');
+                readerFooter.classList.add('opacity-0');
+            }, 3000);
+        }
+        
+        showReaderControls();
+        
+        document.addEventListener('mousemove', showReaderControls);
+        document.addEventListener('touchstart', showReaderControls);
+        
+        closeReader.addEventListener('click', () => {
+            readerModal.classList.add('hidden');
+            document.body.style.overflow = 'auto';
+        });
+        
+        readerModal.addEventListener('click', (e) => {
+            if (e.target === readerModal) {
+                readerModal.classList.add('hidden');
+                document.body.style.overflow = 'auto';
+            }
+        });
+        
+        document.addEventListener('keydown', (e) => {
+            if (!readerModal.classList.contains('hidden')) {
+                if (e.key === 'Escape') {
+                    readerModal.classList.add('hidden');
+                    document.body.style.overflow = 'auto';
+                }
+            }
+        });
+
+        // Panggil fungsi render saat DOMContentLoaded
+        document.addEventListener('DOMContentLoaded', () => {
+            renderPopularManga();
+            renderLatestManga();
+        });
+    </script>
 </body>
 </html>
